@@ -13,8 +13,8 @@
 #include <osquery/sql/sql.h>
 
 #include "osquery/core/windows/wmi.h"
-#include <osquery/utils/conversions/join.h>
 #include <osquery/utils/conversions/tryto.h>
+#include <osquery/utils/json/json.h>
 
 namespace osquery {
 namespace tables {
@@ -55,7 +55,7 @@ static std::string getProtectorType(const WmiRequest& req,
     if (status.ok()) {
       switch (protectorType) {
       case 1:
-        return "TPM";
+        return "TPM_ONLY";
       case 2:
         return "EXTERNAL_KEY";
       case 3:
@@ -80,9 +80,9 @@ static std::string getProtectorType(const WmiRequest& req,
   return "UNKNOWN";
 }
 
-static std::string getProtectorTypes(const WmiRequest& req,
-                                     const WmiResultItem& object) {
-  std::vector<std::string> protectorTypes;
+static osquery::JSON getProtectorTypes(const WmiRequest& req,
+                                       const WmiResultItem& object) {
+  auto protectorTypes = osquery::JSON::newArray();
   WmiMethodArgs args;
   WmiResultItem out;
   std::vector<std::string> protectorIds;
@@ -92,11 +92,11 @@ static std::string getProtectorTypes(const WmiRequest& req,
     status = out.GetVectorOfStrings("VolumeKeyProtectorID", protectorIds);
     if (status.ok()) {
       for (auto& protectorId : protectorIds) {
-        protectorTypes.push_back(getProtectorType(req, object, protectorId));
+        protectorTypes.pushCopy(getProtectorType(req, object, protectorId));
       }
     }
   }
-  return osquery::join(protectorTypes, ",");
+  return protectorTypes;
 }
 
 QueryData genBitlockerInfo(QueryContext& context) {
@@ -142,7 +142,9 @@ QueryData genBitlockerInfo(QueryContext& context) {
     }
     r["encryption_method"] = emethod_str;
 
-    r["protector_types"] = getProtectorTypes(*wmiSystemReq, data);
+    std::string protector_types;
+    getProtectorTypes(*wmiSystemReq, data).toString(protector_types);
+    r["protector_types"] = protector_types;
 
     fetchMethodResultLong(
         r["version"], *wmiSystemReq, data, "GetVersion", "Version");
